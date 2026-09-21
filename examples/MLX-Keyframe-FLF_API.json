@@ -1,0 +1,190 @@
+{
+  "10": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "slow cinematic camera push-in, golden hour light"
+    },
+    "_meta": {
+      "title": "(Input:prompt) Prompt"
+    }
+  },
+  "11": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "blurry, distorted, low quality, watermark, text"
+    },
+    "_meta": {
+      "title": "(Input:negative) Negative"
+    }
+  },
+  "12": {
+    "class_type": "PrimitiveFloat",
+    "inputs": {
+      "value": 4.0
+    },
+    "_meta": {
+      "title": "(Input:duration) Duration sec"
+    }
+  },
+  "13": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 42
+    },
+    "_meta": {
+      "title": "(Input:seed) Seed"
+    }
+  },
+  "14": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 512
+    },
+    "_meta": {
+      "title": "(Input:width) Width"
+    }
+  },
+  "15": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 320
+    },
+    "_meta": {
+      "title": "(Input:height) Height"
+    }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "flf_start.png"
+    },
+    "_meta": {
+      "title": "(Input:image) First frame"
+    }
+  },
+  "5": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "flf_end.png"
+    },
+    "_meta": {
+      "title": "(Input:image) Last frame"
+    }
+  },
+  "1": {
+    "class_type": "LTXVMLXCheckpointLoader",
+    "inputs": {
+      "model_dir": "/ЗАМЕНИ/путь/к/ltx-2.3-mlx-q4",
+      "force_reload": false
+    }
+  },
+  "2": {
+    "class_type": "LTXVMLXTextEncoderLoader",
+    "inputs": {
+      "model_dir": "/ЗАМЕНИ/путь/к/ltx-2.3-mlx-q4",
+      "gemma_model_id": "/ЗАМЕНИ/путь/к/gemma-3-12b-it-4bit",
+      "force_reload": false
+    }
+  },
+  "3": {
+    "class_type": "LTXVMLXTextEncode",
+    "inputs": {
+      "text_encoder": [
+        "2",
+        0
+      ],
+      "prompt": [
+        "10",
+        0
+      ],
+      "negative_prompt": [
+        "11",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "LTXVMLXKeyframeTransitionSampler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "conditioning": [
+        "3",
+        0
+      ],
+      "vae": [
+        "1",
+        1
+      ],
+      "first_image": [
+        "4",
+        0
+      ],
+      "last_image": [
+        "5",
+        0
+      ],
+      "width": [
+        "14",
+        0
+      ],
+      "height": [
+        "15",
+        0
+      ],
+      "duration": [
+        "12",
+        0
+      ],
+      "fps": 24.0,
+      "seed": [
+        "13",
+        0
+      ],
+      "stage1_steps": 20,
+      "stage2_steps": 3,
+      "start_strength": 0.7,
+      "end_strength": 0.7,
+      "cfg_scale": 3.0,
+      "stg_scale": 1.0,
+      "dev_transformer": "transformer-dev.safetensors",
+      "distilled_lora": "ltx-2.3-22b-distilled-lora-384.safetensors",
+      "distilled_lora_strength": 1.0
+    }
+  },
+  "7": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "6",
+        0
+      ],
+      "audio": [
+        "6",
+        1
+      ],
+      "fps": 24.0,
+      "bit_depth": "auto",
+      "color_space": "sRGB",
+      "codec": "none"
+    }
+  },
+  "8": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "7",
+        0
+      ],
+      "filename_prefix": "video/calliope_flf",
+      "format": "auto",
+      "codec": "auto",
+      "format.codec": "auto"
+    },
+    "_meta": {
+      "title": "(Output:video) Video Output"
+    }
+  }
+}

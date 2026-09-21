@@ -1,0 +1,46 @@
+--- src/calliope/routers/story.py
++++ src/calliope/routers/story.py
+@@ -64,7 +64,7 @@
+     temperature: float = 0.7,
+ ) -> list[dict[str, Any]]:
+     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+-    result = await generate_structured(messages, temperature=temperature)
++    result = await generate_structured(messages, temperature=temperature, role="story")
+     beats = result.get("beats") or []
+     if len(beats) < want:
+         # Retry only this chunk — never the whole story.
+@@ -81,6 +81,7 @@
+                 },
+             ],
+             temperature=0.4,
++            role="story",
+         )
+         beats = retry.get("beats") or []
+     return beats
+@@ -107,7 +108,7 @@
+             tone=project["tone"],
+             target_duration=project["target_duration"],
+         )
+-        result = await generate_structured(messages, temperature=0.7)
++        result = await generate_structured(messages, temperature=0.7, role="story")
+         beats_out = result.get("beats") or []
+         if len(beats_out) < required_beats:
+             await event_bus.publish(
+@@ -137,7 +138,7 @@
+                     ),
+                 },
+             ]
+-            result = await generate_structured(repair, temperature=0.4)
++            result = await generate_structured(repair, temperature=0.4, role="story")
+             beats_out = result.get("beats") or []
+         yield {
+             "title": result.get("title"),
+@@ -164,7 +165,7 @@
+         {"role": "system", "content": system},
+         {"role": "user", "content": brief_user},
+     ]
+-    brief = await generate_structured(brief_messages, temperature=0.7)
++    brief = await generate_structured(brief_messages, temperature=0.7, role="story")
+     beats_out = brief.get("beats") or []
+     if len(beats_out) < first_n:
+         # _request_beats_chunk retries the short chunk once at low temp.

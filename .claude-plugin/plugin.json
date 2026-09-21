@@ -1,0 +1,14 @@
+{
+  "name": "claude-calliope",
+  "displayName": "Calliope",
+  "version": "0.1.0",
+  "description": "Обвязка для Calliope на Apple Silicon: раскадровка пишется Claude по подписке (шим поверх claude -p), видео рендерится локальными MLX-графами ComfyUI. Разметка workflow ролевыми тегами, управление сервисами, прогон шотов.",
+  "author": {
+    "name": "Kirill",
+    "url": "https://github.com/llirikkcoder"
+  },
+  "repository": "https://github.com/llirikkcoder/claude-calliope",
+  "keywords": ["calliope", "comfyui", "mlx", "apple-silicon", "storyboard", "video-generation", "ltx", "openai-shim"],
+  "license": "MIT",
+  "defaultEnabled": true
+}

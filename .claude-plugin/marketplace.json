@@ -1,0 +1,15 @@
+{
+  "name": "claude-calliope",
+  "description": "Плагин /calliope: раскадровка через Claude по подписке, рендер локальными MLX-графами ComfyUI",
+  "owner": {
+    "name": "Kirill",
+    "url": "https://github.com/llirikkcoder"
+  },
+  "plugins": [
+    {
+      "name": "claude-calliope",
+      "source": "./",
+      "description": "Управление Calliope, шим Claude вместо локальной LLM, разметка ComfyUI-графов ролевыми тегами и прогон шотов"
+    }
+  ]
+}

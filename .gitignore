@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.orig
+*.rej
+logs/
+workdir/

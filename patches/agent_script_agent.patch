@@ -1,0 +1,20 @@
+--- src/calliope/agent/script_agent.py
++++ src/calliope/agent/script_agent.py
+@@ -44,7 +44,7 @@
+         chunk_scenes=chunk_scenes,
+         previous_tail=previous_tail,
+     )
+-    result = await generate_structured(messages, temperature=0.7)
++    result = await generate_structured(messages, temperature=0.7, role="script")
+     scenes = result.get("scenes") or []
+     if len(scenes) < chunk_scenes:
+         # Retry only this chunk — the old code retried the ENTIRE script.
+@@ -59,7 +59,7 @@
+                 ),
+             },
+         ]
+-        result = await generate_structured(retry_messages, temperature=0.5)
++        result = await generate_structured(retry_messages, temperature=0.5, role="script")
+         scenes = result.get("scenes") or []
+     return scenes[:chunk_scenes]
+ 

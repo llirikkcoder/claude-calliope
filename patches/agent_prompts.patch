@@ -1,0 +1,16 @@
+--- src/calliope/agent/prompts.py
++++ src/calliope/agent/prompts.py
+@@ -55,9 +55,11 @@
+ 
+     minutes = 0.0
+     seconds = 0.0
+-    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*(min|mins|minutes?|m)\b", text):
++    # Russian units alongside the English ones: without them "12 сек" fell
++    # through to the bare-number branch and was read as 12 MINUTES.
++    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*(min|mins|minutes?|m|мин\w*|м)\b", text):
+         minutes += float(m.group(1))
+-    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*(sec|secs|seconds?|s)\b", text):
++    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*(sec|secs|seconds?|s|сек\w*|с)\b", text):
+         seconds += float(m.group(1))
+ 
+     if minutes or seconds:
