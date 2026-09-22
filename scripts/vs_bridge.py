@@ -32,6 +32,21 @@ from pathlib import Path
 CALLIOPE = os.environ.get("CALLIOPE_URL", "http://127.0.0.1:8247")
 COMFYUI = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188")
 
+# Форматы площадок из рекламной стратегии VS (ADS_Креативы.md).
+PRESETS = {
+    "reels":    (1080, 1920),   # Reels / Stories, 9:16
+    "story":    (1080, 1920),
+    "feed":     (1080, 1080),   # Meta feed, 1:1
+    "square":   (1080, 1080),
+    "portrait": (1080, 1350),   # 4:5
+    "site":     (1920, 1080),   # горизонталь для сайта
+    "linkedin": (1920, 1080),
+}
+
+# Титры рисуются Pillow и кладутся поверх через overlay: в сборках ffmpeg
+# без libfreetype фильтра drawtext попросту нет.
+CAPTION_FONT = os.environ.get("VS_CAPTION_FONT", "/System/Library/Fonts/Supplemental/Arial.ttf")
+
 REAL_RE = re.compile(r"^\s*(фото|видео|photo|video)\s*:\s*(.+?)\s*$", re.IGNORECASE)
 GEN_RE = re.compile(r"^\s*(сгенерировать|generate)\s*:\s*(.+?)\s*$", re.IGNORECASE)
 
@@ -283,9 +298,58 @@ def cmd_wait(args) -> None:
         time.sleep(args.interval)
 
 
+def render_caption(text: str, width: int, height: int, out: str) -> str | None:
+    """Нарисовать титр в PNG с альфой — ffmpeg положит его поверх кадра."""
+    text = (text or "").strip().strip("«»\"")
+    if not text or text == "—":
+        return None
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return None
+
+    size = max(28, int(height * 0.045))
+    try:
+        font = ImageFont.truetype(CAPTION_FONT, size)
+    except OSError:
+        font = ImageFont.load_default()
+
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # Перенос по ширине кадра с запасом на поля.
+    limit = int(width * 0.82)
+    words, lines, current = text.split(), [], ""
+    for word in words:
+        probe = f"{current} {word}".strip()
+        if draw.textlength(probe, font=font) <= limit or not current:
+            current = probe
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+
+    line_h = int(size * 1.35)
+    total = line_h * len(lines)
+    y = height - total - int(height * 0.08)
+    for line in lines:
+        w = draw.textlength(line, font=font)
+        x = (width - w) / 2
+        # Подложка-обводка: титр обязан читаться и на светлой живописи.
+        for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
+            draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0, 190))
+        draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
+        y += line_h
+    img.save(out)
+    return out
+
+
 def cmd_assemble(args) -> None:
     """Склеить шоты по порядку: фото — как статичный кадр, видео — обрезкой."""
     manifest = json.loads(Path(args.manifest).read_text())
+    width, height = PRESETS.get(args.preset, (args.width, args.height)) if args.preset \
+        else (args.width, args.height)
     tmpdir = tempfile.mkdtemp(prefix="vs-assemble-")
     pieces: list[str] = []
     missing: list[int] = []
@@ -293,21 +357,39 @@ def cmd_assemble(args) -> None:
     for shot in sorted(manifest["shots"], key=lambda s: s["n"]):
         dur = float(shot["seconds"])
         out = os.path.join(tmpdir, f"{shot['n']:03d}.mp4")
-        scale = (f"scale={args.width}:{args.height}:force_original_aspect_ratio=decrease,"
-                 f"pad={args.width}:{args.height}:(ow-iw)/2:(oh-ih)/2,setsar=1")
+        if args.fill == "blur":
+            # Горизонтальная живопись в вертикали 9:16 оставляет половину кадра
+            # чёрной. Размытая копия того же кадра держит внимание и палитру.
+            scale = (f"split[bg][fg];"
+                     f"[bg]scale={width}:{height}:force_original_aspect_ratio=increase,"
+                     f"crop={width}:{height},gblur=sigma=28[bgb];"
+                     f"[fg]scale={width}:{height}:force_original_aspect_ratio=decrease[fgs];"
+                     f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1")
+        else:
+            scale = (f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                     f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1")
         if shot["kind"] == "generate":
             src = shot.get("output")
             if not src or not Path(src).is_file():
                 missing.append(shot["n"]); continue
-            cmd = ["ffmpeg", "-v", "error", "-i", src, "-t", str(dur),
-                   "-vf", f"{scale},fps={args.fps}", "-an"]
+            cmd = ["ffmpeg", "-v", "error", "-i", src]
         elif shot["kind"] == "photo":
-            cmd = ["ffmpeg", "-v", "error", "-loop", "1", "-i", shot["path"], "-t", str(dur),
-                   "-vf", f"{scale},fps={args.fps}", "-an"]
+            cmd = ["ffmpeg", "-v", "error", "-loop", "1", "-i", shot["path"]]
         else:
-            cmd = ["ffmpeg", "-v", "error", "-i", shot["path"], "-t", str(dur),
-                   "-vf", f"{scale},fps={args.fps}", "-an"]
-        subprocess.run(cmd + ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-y", out], check=True)
+            cmd = ["ffmpeg", "-v", "error", "-i", shot["path"]]
+
+        caption = None
+        if not args.no_captions:
+            caption = render_caption(shot.get("line", ""), width, height,
+                                     os.path.join(tmpdir, f"cap_{shot['n']}.png"))
+        if caption:
+            cmd += ["-i", caption,
+                    "-filter_complex", f"[0:v]{scale},fps={args.fps}[bg];[bg][1:v]overlay=0:0"]
+        else:
+            cmd += ["-vf", f"{scale},fps={args.fps}"]
+
+        subprocess.run(cmd + ["-t", str(dur), "-an", "-c:v", "libx264",
+                               "-pix_fmt", "yuv420p", "-y", out], check=True)
         pieces.append(out)
 
     if missing:
@@ -322,7 +404,11 @@ def cmd_assemble(args) -> None:
     dur = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
                           "-of", "default=nw=1:nk=1", args.out],
                          capture_output=True, text=True).stdout.strip()
-    print(f"  собрано: {args.out} ({float(dur):.1f}с, шотов {len(pieces)})")
+    print(f"  собрано: {args.out} ({float(dur):.1f}с, {width}x{height}, шотов {len(pieces)})")
+    if float(dur) > 3.5 and not args.no_captions:
+        first = next((s for s in sorted(manifest["shots"], key=lambda x: x["n"])), None)
+        if first and not (first.get("line") or "").strip("«»\" —"):
+            print("  первые 3 секунды без титра — по рекламной структуре это место хука")
 
 
 def main() -> None:
@@ -352,8 +438,12 @@ def main() -> None:
 
     a = sub.add_parser("assemble", help="склеить готовый ролик")
     a.add_argument("manifest"); a.add_argument("-o", "--out", required=True)
+    a.add_argument("--preset", choices=sorted(PRESETS), help="формат площадки (перекрывает --width/--height)")
     a.add_argument("--width", type=int, default=1080); a.add_argument("--height", type=int, default=1920)
     a.add_argument("--fps", type=int, default=24)
+    a.add_argument("--no-captions", action="store_true", help="не накладывать титры из шот-листа")
+    a.add_argument("--fill", choices=("blur", "black"), default="blur",
+                   help="чем заполнять поля, когда кадр не совпал с форматом")
     a.set_defaults(fn=cmd_assemble)
 
     args = ap.parse_args()
