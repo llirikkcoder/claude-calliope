@@ -71,13 +71,17 @@ def scrim(img: Image.Image, size: int) -> Image.Image:
     return Image.alpha_composite(img.convert("RGBA"), layer)
 
 
-def draw_text(img: Image.Image, text: str, cta: str | None, size: int) -> Image.Image:
+def draw_text(img: Image.Image, text: str, cta: str | None, size: int,
+              caption: str | None = None) -> Image.Image:
     d = ImageDraw.Draw(img)
     lines = text.split("\n")
     font_size = int(size * 0.069) if max(len(l) for l in lines) < 20 else int(size * 0.057)
     font = ImageFont.truetype(SERIF, font_size)
     lh = int(font_size * 1.32)
-    y = size - lh * len(lines) - int(size * (0.139 if cta else 0.089))
+    bottom = 0.139 if cta else 0.089
+    if caption:
+        bottom += 0.036
+    y = size - lh * len(lines) - int(size * bottom)
     for line in lines:
         w = d.textlength(line, font=font)
         x = (size - w) / 2
@@ -85,6 +89,15 @@ def draw_text(img: Image.Image, text: str, cta: str | None, size: int) -> Image.
         d.text((x + 2, y + 2), line, font=font, fill=(10, 12, 16, 120))
         d.text((x, y), line, font=font, fill=(250, 249, 246, 255))
         y += lh
+    if caption:
+        # Подпись работы — мельче реплики и с разрядкой: она не спорит
+        # с высказыванием, а просто говорит, что именно на холсте.
+        f3 = ImageFont.truetype(SANS, int(size * 0.024))
+        spaced = "  ".join(caption)
+        w = d.textlength(spaced, font=f3)
+        cy = size - int(size * (0.062 if not cta else 0.145))
+        d.text(((size - w) / 2 + 1, cy + 1), spaced, font=f3, fill=(10, 12, 16, 110))
+        d.text(((size - w) / 2, cy), spaced, font=f3, fill=(226, 223, 216, 225))
     if cta:
         f2 = ImageFont.truetype(SANS, int(size * 0.028))
         w = d.textlength(cta, font=f2)
@@ -116,7 +129,8 @@ def cmd_build(args) -> None:
     for i, card in enumerate(spec["cards"], 1):
         focus = (float(card.get("focus_x", 0.5)), float(card.get("focus_y", 0.5)))
         im = fit_square(Image.open(resolve(card["image"])).convert("RGB"), size, focus)
-        im = draw_text(scrim(im, size), card["text"], card.get("cta"), size)
+        im = draw_text(scrim(im, size), card["text"], card.get("cta"), size,
+                       card.get("caption"))
         path = out / f"card_{i}.jpg"
         im.convert("RGB").save(path, quality=94)
         print(f"  {i}. {card['image']:<18} «{card['text'].replace(chr(10), ' / ')}»")
