@@ -1,8 +1,8 @@
 {
   "name": "claude-calliope",
   "displayName": "Calliope",
-  "version": "0.3.1",
-  "description": "Обвязка для Calliope на Apple Silicon: раскадровку пишет Claude по подписке (шим поверх claude -p), видео рендерится локальными MLX-графами ComfyUI. Мост к claude-vs-video, разметка workflow ролевыми тегами, субагент на полный цикл ролика.",
+  "version": "0.4.0",
+  "description": "Обвязка для Calliope на Apple Silicon: раскадровку пишет Claude по подписке (шим поверх claude -p), видео рендерится локальными MLX-графами ComfyUI. Мост к claude-vs-video, разметка workflow ролевыми тегами, субагент на полный цикл ролика, сборка карточек для карусели.",
   "author": {
     "name": "Kirill",
     "url": "https://github.com/llirikkcoder"
