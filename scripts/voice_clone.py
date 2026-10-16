@@ -297,7 +297,9 @@ def cmd_batch(args) -> None:
         except Exception as exc:
             print(f"   {p['id']}: не вышло — {exc}")
             continue
-        done.append({**p, "file": str(path), "seconds": probe_duration(str(path))})
+        # Путь абсолютный: манифест читают из других директорий — voiceover.py,
+        # сборка ролика, — и относительный там указывает в никуда.
+        done.append({**p, "file": str(path.resolve()), "seconds": probe_duration(str(path))})
         print(f"   {p['id']:<10} {done[-1]['seconds']:.1f} с → {path}")
 
     entry["last_used"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
