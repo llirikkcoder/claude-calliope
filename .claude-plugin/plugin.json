@@ -1,7 +1,7 @@
 {
   "name": "claude-calliope",
   "displayName": "Calliope",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Обвязка для Calliope на Apple Silicon: раскадровку пишет Claude по подписке (шим поверх claude -p), видео рендерится локальными MLX-графами ComfyUI. Мост к claude-vs-video, разметка workflow ролевыми тегами, сборка карточек для карусели. Клонирование голоса и озвучка текста.",
   "author": {
     "name": "Kirill",
@@ -19,9 +19,11 @@
     "openai-shim",
     "pay-as-you-go",
     "storyboard",
+    "subtitles",
     "tts",
     "video-generation",
-    "voice-cloning"
+    "voice-cloning",
+    "voiceover"
   ],
   "license": "MIT",
   "defaultEnabled": true
