@@ -195,6 +195,24 @@ def cmd_clone(args) -> None:
     print(f"\n  Голос удалится, если не использовать его {VOICE_TTL_DAYS} дней.")
 
 
+def cmd_register(args) -> None:
+    """Записать в реестр голос, созданный на сайте.
+
+    Клонировать удобнее бывает через веб-интерфейс, а пользоваться — из
+    терминала. Эта команда связывает одно с другим: id со страницы результата
+    получает короткое имя, и дальше `say`/`batch` работают как обычно.
+    """
+    reg = load_registry()
+    reg[args.name] = {"voice_id": args.voice_id, "model": args.model,
+                      "sample": args.sample or "создан на сайте fal.ai",
+                      "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                      "last_used": None}
+    save_registry(reg)
+    print(f"  голос «{args.name}» записан: {args.voice_id}")
+    print(f"  реестр: {REGISTRY}")
+    print(f"  Голос удалится, если не использовать его {VOICE_TTL_DAYS} дней.")
+
+
 def cmd_say(args) -> None:
     text = Path(args.file).read_text().strip() if args.file else (args.text or "")
     if not text:
@@ -321,6 +339,14 @@ def main() -> None:
     c.add_argument("--out", help="куда сохранить пробу")
     c.add_argument("--yes", action="store_true", help="подтверждение согласия владельца голоса")
     c.set_defaults(fn=cmd_clone)
+
+    r = sub.add_parser("register", help="добавить голос, созданный на сайте fal.ai")
+    r.add_argument("voice_id", help="custom_voice_id со страницы результата")
+    r.add_argument("--name", required=True)
+    r.add_argument("--model", default="speech-02-hd",
+                   choices=("speech-02-hd", "speech-02-turbo", "speech-01-hd", "speech-01-turbo"))
+    r.add_argument("--sample", help="откуда образец, для памяти")
+    r.set_defaults(fn=cmd_register)
 
     s = sub.add_parser("say", help="озвучить текст готовым голосом")
     s.add_argument("text", nargs="?"); s.add_argument("--file")
