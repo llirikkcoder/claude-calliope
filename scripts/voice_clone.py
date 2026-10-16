@@ -42,6 +42,30 @@ REGISTRY = Path(os.environ.get("VS_VOICE_REGISTRY",
 
 MIN_SAMPLE_SECONDS = 10
 
+# Языки, которые принимает language_boost. "auto" отдаёт определение сервису.
+LANGUAGES = (
+    "auto", "English", "Russian", "Ukrainian", "German", "French", "Spanish",
+    "Portuguese", "Italian", "Dutch", "Polish", "Czech", "Slovak", "Slovenian",
+    "Croatian", "Hungarian", "Romanian", "Bulgarian", "Greek", "Turkish",
+    "Danish", "Swedish", "Norwegian", "Nynorsk", "Finnish", "Catalan",
+    "Afrikaans", "Arabic", "Hebrew", "Hindi", "Chinese", "Japanese", "Korean",
+    "Vietnamese", "Thai", "Indonesian", "Malay",
+)
+
+
+def detect_language(text: str) -> str:
+    """Русский или английский по самому тексту.
+
+    Нужно, чтобы не задавать язык руками на каждую реплику: у двуязычного
+    проекта половина строк на одном языке, половина на другом. Всё, что не
+    кириллица и не латиница, отдаём сервису через "auto".
+    """
+    cyr = sum(1 for ch in text if "\u0400" <= ch <= "\u04ff")
+    lat = sum(1 for ch in text if ("a" <= ch.lower() <= "z"))
+    if cyr == 0 and lat == 0:
+        return "auto"
+    return "Russian" if cyr >= lat else "English"
+
 
 def load_registry() -> dict:
     if REGISTRY.is_file():
@@ -96,6 +120,33 @@ def run_queue(model: str, payload: dict, key: str, timeout: float = 900) -> dict
         if time.time() - started > timeout:
             raise RuntimeError(f"ожидание дольше {timeout:.0f} с")
         time.sleep(5)
+
+
+def synthesize(text: str, voice_id: str, out: str, key: str, *, language: str = "auto",
+               speed: float = 1.0, volume: float = 1.0, pitch: int = 0,
+               emotion: str | None = None, sample_rate: int = 32000) -> str:
+    payload = {
+        "text": text,
+        "voice_setting": {"voice_id": voice_id, "speed": speed, "vol": volume, "pitch": pitch},
+        "audio_setting": {"sample_rate": sample_rate, "bitrate": 128000,
+                          "format": "mp3", "channel": 1},
+        "output_format": "url",
+    }
+    if emotion:
+        payload["voice_setting"]["emotion"] = emotion
+    if language and language != "auto":
+        payload["language_boost"] = language
+    if language == "English":
+        # Иначе «80x100» и «2026» читаются посимвольно.
+        payload["voice_setting"]["english_normalization"] = True
+
+    res = run_queue(TTS_MODEL, payload, key)
+    url = (res.get("audio") or {}).get("url")
+    if not url:
+        raise RuntimeError(f"ответ без звука: {json.dumps(res, ensure_ascii=False)[:300]}")
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    urllib.request.urlretrieve(url, out)
+    return out
 
 
 def cmd_clone(args) -> None:
@@ -158,31 +209,87 @@ def cmd_say(args) -> None:
     entry = reg[args.voice]
 
     key = fal_key()
-    payload = {
-        "text": text,
-        "voice_setting": {"voice_id": entry["voice_id"], "speed": args.speed,
-                          "vol": args.volume, "pitch": args.pitch},
-        "audio_setting": {"sample_rate": args.sample_rate, "bitrate": 128000,
-                          "format": "mp3", "channel": 1},
-        "output_format": "url",
-    }
-    if args.emotion:
-        payload["voice_setting"]["emotion"] = args.emotion
-    if args.language:
-        payload["language_boost"] = args.language
-
-    print(f"  озвучиваю {len(text)} символов голосом «{args.voice}»…", flush=True)
+    language = args.language or detect_language(text)
     started = time.time()
-    res = run_queue(TTS_MODEL, payload, key)
-    url = (res.get("audio") or {}).get("url")
-    if not url:
-        raise SystemExit(f"ответ без звука: {json.dumps(res, ensure_ascii=False)[:300]}")
-    urllib.request.urlretrieve(url, args.out)
+    synthesize(text, entry["voice_id"], args.out, key, language=language,
+               speed=args.speed, volume=args.volume, pitch=args.pitch,
+               emotion=args.emotion, sample_rate=args.sample_rate)
 
     entry["last_used"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     save_registry(reg)
     dur = probe_duration(args.out)
-    print(f"  готово за {time.time()-started:.0f} с → {args.out} ({dur:.1f} с звука)")
+    print(f"  {language}: {len(text)} символов → {args.out} "
+          f"({dur:.1f} с звука, {time.time()-started:.0f} с работы)")
+
+
+def cmd_batch(args) -> None:
+    """Озвучить набор реплик — каждую своим файлом и своим языком.
+
+    Формат: либо JSON-список записей {"id", "text", опционально "language",
+    "emotion", "speed"}, либо текстовый файл по реплике на строку.
+    """
+    src = Path(args.script)
+    if src.suffix.lower() == ".json":
+        items = json.loads(src.read_text())
+        if isinstance(items, dict):
+            items = [{"id": k, "text": v} for k, v in items.items()]
+    else:
+        items = [{"id": f"{i:02d}", "text": line.strip()}
+                 for i, line in enumerate(src.read_text().splitlines(), 1)
+                 if line.strip() and not line.strip().startswith("#")]
+    if not items:
+        raise SystemExit("в файле нет реплик")
+
+    plan = []
+    for it in items:
+        text = (it.get("text") or "").strip()
+        if not text:
+            continue
+        plan.append({**it, "text": text,
+                     "language": it.get("language") or args.language or detect_language(text)})
+
+    chars = sum(len(p["text"]) for p in plan)
+    print(f"  реплик: {len(plan)}, символов: {chars}")
+    for p in plan:
+        print(f"   {p['id']:<10} {p['language']:<8} {p['text'][:52]}")
+    # Голос нужен только для запуска: разбор и раскладку по языкам полезно
+    # посмотреть и до того, как голос вообще создан.
+    reg = load_registry()
+    if args.voice not in reg:
+        print(f"\n  голос «{args.voice}» не известен. Есть: {', '.join(reg) or 'ни одного'}")
+        print("  создать: voice_clone.py clone образец.mp3 --name " + args.voice + " --yes")
+        return
+    entry = reg[args.voice]
+
+    if not args.yes:
+        print("\n  ничего не озвучено: добавь --yes")
+        return
+
+    key = fal_key()
+    out_dir = Path(args.out); out_dir.mkdir(parents=True, exist_ok=True)
+    done = []
+    for p in plan:
+        path = out_dir / f"{p['id']}.mp3"
+        try:
+            synthesize(p["text"], entry["voice_id"], str(path), key,
+                       language=p["language"], speed=float(p.get("speed", args.speed)),
+                       volume=args.volume, pitch=args.pitch,
+                       emotion=p.get("emotion") or args.emotion,
+                       sample_rate=args.sample_rate)
+        except Exception as exc:
+            print(f"   {p['id']}: не вышло — {exc}")
+            continue
+        done.append({**p, "file": str(path), "seconds": probe_duration(str(path))})
+        print(f"   {p['id']:<10} {done[-1]['seconds']:.1f} с → {path}")
+
+    entry["last_used"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    save_registry(reg)
+    manifest = out_dir / "voice-manifest.json"
+    manifest.write_text(json.dumps({"voice": args.voice, "items": done},
+                                   ensure_ascii=False, indent=2))
+    total = sum(d["seconds"] for d in done)
+    print(f"\n  готово {len(done)} из {len(plan)}, суммарно {total:.1f} с звука")
+    print(f"  манифест: {manifest}")
 
 
 def cmd_list(_args) -> None:
@@ -222,10 +329,26 @@ def main() -> None:
     s.add_argument("--volume", type=float, default=1.0)
     s.add_argument("--pitch", type=int, default=0)
     s.add_argument("--emotion", choices=("happy","sad","angry","fearful","disgusted","surprised","neutral"))
-    s.add_argument("--language", default="Russian", help="подсказка языка, '' чтобы не задавать")
+    s.add_argument("--language", default=None, choices=LANGUAGES,
+                   help="по умолчанию определяется по тексту")
     s.add_argument("--sample-rate", type=int, default=32000,
                    choices=(8000,16000,22050,24000,32000,44100))
     s.set_defaults(fn=cmd_say)
+
+    b = sub.add_parser("batch", help="озвучить набор реплик (двуязычный сценарий)")
+    b.add_argument("script", help="JSON со списком реплик или текстовый файл построчно")
+    b.add_argument("--voice", required=True)
+    b.add_argument("--out", default="voice-out", help="папка для файлов")
+    b.add_argument("--language", default=None, choices=LANGUAGES,
+                   help="один язык на все реплики; по умолчанию — по тексту каждой")
+    b.add_argument("--speed", type=float, default=1.0)
+    b.add_argument("--volume", type=float, default=1.0)
+    b.add_argument("--pitch", type=int, default=0)
+    b.add_argument("--emotion", choices=("happy","sad","angry","fearful","disgusted","surprised","neutral"))
+    b.add_argument("--sample-rate", type=int, default=32000,
+                   choices=(8000,16000,22050,24000,32000,44100))
+    b.add_argument("--yes", action="store_true", help="подтверждение: реплики уйдут на озвучку")
+    b.set_defaults(fn=cmd_batch)
 
     sub.add_parser("list", help="какие голоса есть и когда сгорят").set_defaults(fn=cmd_list)
 
