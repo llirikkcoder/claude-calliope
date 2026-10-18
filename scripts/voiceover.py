@@ -74,7 +74,11 @@ def build_track(items: list[dict], out: str, gap: float) -> float:
             parts.append(sil)
             cursor = start
         conv = f"{tmp}/part_{len(parts)}.m4a"
-        subprocess.run(["ffmpeg", "-v", "error", "-i", it["file"],
+        # Короткие фейды по краям реплики: без них на стыках слышны щелчки —
+        # склейка рвёт звуковую волну посередине периода.
+        fade = (f"afade=t=in:st=0:d=0.03,"
+                f"afade=t=out:st={max(it['seconds'] - 0.03, 0):.3f}:d=0.03")
+        subprocess.run(["ffmpeg", "-v", "error", "-i", it["file"], "-af", fade,
                         "-ac", "1", "-ar", "44100", "-c:a", "aac", "-y", conv], check=True)
         parts.append(conv)
         cursor += it["seconds"]
@@ -111,6 +115,14 @@ def cmd_build(args) -> None:
                       f"в шот на {dur:g} с — субтитр оборвётся вместе с кадром")
             placed.append({**it, "start": start})
         items = sorted(placed, key=lambda x: x["start"])
+    elif any("start" in it for it in items):
+        # Явные моменты из манифеста: реплика ложится на свою фазу анимации,
+        # когда шот-листа нет, а попадать надо точно.
+        t = 0.0
+        for it in items:
+            it["start"] = float(it.get("start", t))
+            t = it["start"] + it["seconds"]
+        items = sorted(items, key=lambda x: x["start"])
     else:
         t = 0.0
         for it in items:
@@ -125,7 +137,9 @@ def cmd_build(args) -> None:
     srt, vtt = [], ["WEBVTT", ""]
     for i, it in enumerate(items, 1):
         start, end = it["start"], it["start"] + it["seconds"]
-        text = wrap(it["text"])
+        # Для голоса числа пишут словами, на экране они должны остаться
+        # цифрами: поле caption задаёт экранный вариант реплики.
+        text = wrap(it.get("caption") or it["text"])
         srt += [str(i), f"{ts_srt(start)} --> {ts_srt(end)}", text, ""]
         vtt += [f"{ts_vtt(start)} --> {ts_vtt(end)}", text, ""]
     Path(out_base.with_suffix(".srt")).write_text("\n".join(srt), encoding="utf-8")
